@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Contact Us | Go Malaysia</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Navbar -->
+  <div id="navbar-placeholder"></div>
+
+  <!-- Contact Section -->
+  <section class="contact-section">
+    <h2>Contact Us</h2>
+    <p>If you have any questions, feedback, or just want to say hi, fill out the form below! 📨</p>
+
+    <form id="contactForm" class="contact-form" novalidate>
+      <label>
+        Name
+        <input type="text" name="name" placeholder="Your name" required />
+      </label>
+
+      <label>
+        Email
+        <input type="email" name="email" placeholder="you@example.com" required />
+      </label>
+
+      <label>
+        Subject
+        <input type="text" name="subject" placeholder="What is this about?" />
+      </label>
+
+      <label>
+        Message
+        <textarea name="message" rows="5" placeholder="Write your message..." required></textarea>
+      </label>
+
+      <!-- simple honeypot anti-spam (hidden from users) -->
+      <input type="text" name="company" style="display:none" tabindex="-1" autocomplete="off"/>
+
+      <button id="sendBtn" type="submit">Send Message</button>
+
+      <!-- feedback area -->
+      <p id="contactStatus" class="muted" style="margin-top:10px;"></p>
+    </form>
+  </section>
+
+  <!-- Footer -->
+  <div id="footer-placeholder"></div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      // load navbar/footer
+      fetch("navbar.html").then(r => r.text()).then(html => {
+        document.getElementById("navbar-placeholder").innerHTML = html;
+      });
+      fetch("footer.html").then(r => r.text()).then(html => {
+        document.getElementById("footer-placeholder").innerHTML = html;
+      });
+
+      const form = document.getElementById("contactForm");
+      const btn  = document.getElementById("sendBtn");
+      const statusEl = document.getElementById("contactStatus");
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        statusEl.textContent = "";
+        
+        // honeypot check
+        if (form.company && form.company.value.trim() !== "") {
+          return; // likely a bot; silently ignore
+        }
+
+        // basic front-end validation
+        if (!form.name.value.trim() || !form.email.value.trim() || !form.message.value.trim()) {
+          statusEl.textContent = "Please fill in name, email, and message.";
+          statusEl.style.color = "#b91c1c";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Sending…";
+
+        try {
+          const res = await fetch("http://localhost:3000/api/contact", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: form.name.value.trim(),
+              email: form.email.value.trim(),
+              subject: form.subject.value.trim(),
+              message: form.message.value.trim()
+            })
+          });
+
+          const text = await res.text();
+
+          if (!res.ok) throw new Error(text || "Failed to send");
+
+          statusEl.textContent = "✅ Thank you! Your message has been sent.";
+          statusEl.style.color = "#065f46";
+          form.reset();
+        } catch (err) {
+          statusEl.textContent = "❌ There was a problem sending your message. Please try again.";
+          statusEl.style.color = "#b91c1c";
+          console.error(err);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Send Message";
+        }
+      });
+    });
+  </script>
+</body>
+</html>

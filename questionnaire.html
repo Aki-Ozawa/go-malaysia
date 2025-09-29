@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Questionnaire | Go Malaysia</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body data-page="questionnaire">
+
+  <!-- Navbar -->
+  <div id="navbar-placeholder"></div>
+
+  <main>
+    <div class="container">
+      <h2>What would you like recommendations for?</h2>
+
+      <div class="category-selection" id="categoryBar">
+        <button class="category-btn" data-category="Location">🏙️ Locations</button>
+        <button class="category-btn" data-category="Food">🍜 Food</button>
+        <button class="category-btn" data-category="Activities">🎢 Activities</button>
+        <button class="category-btn" data-category="Shopping">🛍️ Shopping</button>
+        <button class="category-btn" data-category="Nature">🌿 Nature & Eco-Tourism</button>
+      </div>
+
+      <p id="nmHint" class="hint" style="display:none;margin-top:8px;opacity:.8">
+        Tip: Night Markets also appear under <strong>Activities</strong> in the evening. Turn on “Prefer open now” for smarter results.
+        </p>
+        <script>
+            (function(){
+                const h = document.getElementById('nmHint');
+                if (!h) return;
+                const now = new Date();
+                const mins = now.getHours()*60 + now.getMinutes();
+                if (mins >= 16*60+30) h.style.display = 'block';  // 16:30+
+            })();
+        </script>
+
+    <!-- Modal -->
+    <div id="questionnaireModal" class="modal" aria-hidden="true">
+      <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="q-title">
+        <button class="close-btn" id="closeModal" aria-label="Close">❌</button>
+        <form id="questionnaireForm"></form>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <div id="footer-placeholder"></div>
+
+  <!-- Recommendation engine -->
+  <script src="recs.js?v=21"></script>
+  <script src="questionnaire.js"></script>
+
+  <script>
+    // ---------- Boot ----------
+    document.addEventListener("DOMContentLoaded", init);
+
+    async function init() {
+      await loadPartials();
+
+      const modal = document.getElementById('questionnaireModal');
+      const closeBtn = document.getElementById('closeModal');
+      const categoryBar = document.getElementById('categoryBar');
+
+      // Open modal on category click
+      categoryBar.addEventListener('click', (e) => {
+        const btn = e.target.closest('.category-btn');
+        if (!btn) return;
+        const category = btn.dataset.category;
+        localStorage.setItem('recommendationType', category);
+        openQuestionnaireModal(category);
+      });
+
+      // Close modal on X
+      closeBtn.addEventListener('click', closeQuestionnaireModal);
+
+      // Close modal on backdrop click
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeQuestionnaireModal();
+      });
+    }
+
+    function loadPartials() {
+      const nav = fetch("navbar.html").then(r => r.text()).then(h => {
+        const slot = document.getElementById("navbar-placeholder");
+        if (slot) slot.innerHTML = h;
+      }).catch(()=>{});
+      const foot = fetch("footer.html").then(r => r.text()).then(h => {
+        const slot = document.getElementById("footer-placeholder");
+        if (slot) slot.innerHTML = h;
+      }).catch(()=>{});
+      return Promise.all([nav, foot]);
+    }
+
+    // ---------- Modal + Form ----------
+    function openQuestionnaireModal(category) {
+      const modal = document.getElementById('questionnaireModal');
+      const oldForm = document.getElementById('questionnaireForm');
+
+      // Replace the form node to drop old listeners
+      const freshForm = oldForm.cloneNode(false);
+      oldForm.parentNode.replaceChild(freshForm, oldForm);
+
+      freshForm.innerHTML = `
+        <h3 id="q-title">Preferences for ${category} Recommendations</h3>
+        ${renderCategoryFields(category)}
+        ${renderCommonFields()}
+        <button type="submit" id="savePrefsBtn">Get Recommendations</button>
+      `;
+
+      // Single submit handler for the fresh form
+      freshForm.addEventListener('submit', onSubmitQuestionnaire(category));
+
+      modal.style.display = 'flex';
+      modal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeQuestionnaireModal() {
+      const modal = document.getElementById('questionnaireModal');
+      const form = document.getElementById('questionnaireForm');
+      modal.style.display = 'none';
+      modal.setAttribute('aria-hidden', 'true');
+      form.innerHTML = '';
+    }
+
+    // ---------- Fields ----------
+    function renderCategoryFields(category) {
+      switch (category) {
+        case 'Food':
+          return `
+            <label for="cuisine">Cuisine
+              <select id="cuisine">
+                <option value="">Any</option>
+                <option value="Malay">Malay</option>
+                <option value="Chinese">Chinese</option>
+                <option value="Indian">Indian</option>
+                <option value="Nyonya">Nyonya</option>
+                <option value="Seafood">Seafood</option>
+              </select>
+            </label>
+            <label for="budget">Budget
+              <select id="budget">
+                <option value="">Any</option>
+                <option value="Budget">Budget</option>
+                <option value="Mid-range">Mid-range</option>
+                <option value="Premium">Premium</option>
+              </select>
+            </label>
+          `;
+
+        case 'Location':
+          return `
+            <label for="region">Region
+              <select id="region" name="region">
+                <option value="">Any</option>
+
+                <optgroup label="Cities & Heritage">
+                  <option value="kl_selangor">Kuala Lumpur / Selangor</option>
+                  <option value="penang">Penang</option>
+                  <option value="melaka">Malacca (Melaka)</option>
+                </optgroup>
+
+                <optgroup label="Islands & Beaches">
+                  <option value="langkawi">Langkawi</option>
+                  <option value="sabah">Sabah</option>
+                  <option value="sarawak">Sarawak</option>
+                </optgroup>
+
+                <optgroup label="Highlands & Nature">
+                  <option value="genting">Genting Highlands</option>
+                  <option value="cameron">Cameron Highlands</option>
+                  <option value="johor">Johor</option>
+                </optgroup>
+              </select>
+            </label>
+
+            <label for="duration">Duration
+              <select id="duration">
+                <option value="">Any</option>
+                <option value="1–2 days">1–2 days</option>
+                <option value="3–4 days">3–4 days</option>
+                <option value="5+ days">5+ days</option>
+              </select>
+            </label>
+          `;
+
+        case 'Activities':
+          return `
+            <label for="activities">Activity Type
+              <select id="activities">
+                <option value="">Any</option>
+                <option value="Theme Parks">Theme Parks</option>
+                <option value="Museums & Culture">Museums & Culture</option>
+                <option value="Hiking">Hiking</option>
+                <option value="Island / Water">Island / Water</option>
+              </select>
+            </label>
+            <label for="level">Intensity
+              <select id="level">
+                <option value="">Any</option>
+                <option value="Light">Light</option>
+                <option value="Moderate">Moderate</option>
+                <option value="High">High</option>
+              </select>
+            </label>
+          `;
+
+        case 'Shopping':
+          return `
+            <label for="style">Style
+              <select id="style">
+                <option value="">Any</option>
+                <option value="Malls">Malls</option>
+                <option value="Night Markets">Night Markets</option>
+                <option value="Boutiques">Boutiques</option>
+                <option value="Souvenirs">Souvenirs</option>
+              </select>
+            </label>
+          `;
+
+        case 'Nature':
+          return `
+            <label for="interests">Interests
+              <select id="interests">
+                <option value="">Any</option>
+                <option value="Beaches">Beaches</option>
+                <option value="Rainforest">Rainforest</option>
+                <option value="Highlands">Highlands</option>
+                <option value="Wildlife">Wildlife</option>
+              </select>
+            </label>
+            <label for="items">Gear / Items
+              <input id="items" placeholder="e.g., sneakers, hat, sunscreen" />
+            </label>
+          `;
+
+        default:
+          return ``;
+      }
+    }
+
+    function renderCommonFields() {
+      return `
+        <fieldset class="row">
+          <legend>When & context</legend>
+          <label>
+            <input type="checkbox" id="openNowToggle" checked />
+            Prefer places open <strong>now</strong>
+          </label>
+          <label style="margin-left:16px;">
+            <input type="checkbox" id="allowFarTravel" />
+            Allow far-away regions
+          </label>
+        </fieldset>
+
+        <fieldset class="row">
+          <legend>Filters</legend>
+          <label>
+            <input type="checkbox" id="strictWeather" checked />
+            Strict weather (hide unsuitable)
+          </label>
+          <label style="margin-left:16px;">
+            <input type="checkbox" id="strictPreference" />
+            Strict indoor/outdoor
+          </label>
+        </fieldset>
+
+        <label for="month">Travel Month
+          <select id="month">
+            <option value="">Any</option>
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
+          </select>
+        </label>
+
+        <label for="preference">Preference (Outdoor/Indoor)
+          <select id="preference">
+            <option value="">Any</option>
+            <option value="outdoor">Outdoor</option>
+            <option value="indoor">Indoor</option>
+            <option value="flexible">Flexible</option>
+          </select>
+        </label>
+
+        <label for="weather">Current Weather
+          <select id="weather">
+            <option value="">Any</option>
+            <option value="sunny">☀️ Sunny</option>
+            <option value="rainy">🌧️ Rainy</option>
+            <option value="cloudy">☁️ Cloudy</option>
+          </select>
+        </label>
+      `;
+    }
+
+    // ---------- Normalization (KEEP REGION SLUGS) ----------
+    function normalizePrefs(raw){
+      const out = { ...raw };
+
+      // pop user_id out, then reattach later
+      const userId = out.user_id ?? null;
+      delete out.user_id;
+
+      // Trim strings; keep booleans as-is
+      for (const k of Object.keys(out)) {
+        const v = out[k];
+        if (typeof v === 'boolean') continue; // leave checkboxes alone
+        if (v == null) { out[k] = null; continue; }
+        const s = String(v).trim();
+        if (!s || s.toLowerCase() === 'any' || s.toLowerCase().startsWith('select')) {
+          out[k] = null;
+        } else {
+          out[k] = s;
+        }
+      }
+
+      // ✅ Region: keep the exact slug from <option value="...">
+      if (out.region) out.region = out.region.toLowerCase();
+
+      // lowercase month & weather for engine
+      if (out.month)   out.month   = out.month.toLowerCase();
+      if (out.weather) out.weather = out.weather.toLowerCase();
+
+      // preference lowercase
+      if (out.preference) out.preference = out.preference.toLowerCase();
+
+      // Activities select → style (fallback)
+      if (out.activities && !out.style) out.style = out.activities;
+
+      // Map openNowToggle → localTimeISO
+      if (out.openNowToggle === true) {
+        out.localTimeISO = new Date().toISOString();
+      } else {
+        out.localTimeISO = null;
+      }
+
+      // Defaults if absent (engine also has defaults)
+      if (typeof out.allowFarTravel !== 'boolean')  out.allowFarTravel = false;
+      if (typeof out.strictWeather !== 'boolean')   out.strictWeather = true;
+      if (typeof out.strictPreference !== 'boolean') out.strictPreference = false;
+
+      return { user_id: userId, ...out };
+    }
+
+    // ---------- Submit ----------
+    function onSubmitQuestionnaire(category) {
+      return async function (e) {
+        e.preventDefault();
+        const form = e.target;
+
+        // collect inputs inside this form only
+        const inputs = form.querySelectorAll('input, select, textarea');
+        const prefs = {};
+        inputs.forEach(el => {
+          if (el.type === 'checkbox') {
+            prefs[el.id] = !!el.checked;
+          } else {
+            prefs[el.id] = el.value;
+          }
+        });
+
+        const userId = localStorage.getItem("userId");
+
+        // Base payload from UI
+        const base = {
+          user_id: userId ? Number(userId) : null,
+          recommendationType: localStorage.getItem('recommendationType') || category,
+          allowFarTravel: prefs.allowFarTravel ?? false,       // from checkbox
+          strictWeather: prefs.strictWeather ?? true,          // from checkbox
+          strictPreference: prefs.strictPreference ?? false,   // from checkbox
+          ...prefs
+        };
+
+        // Normalize for recs.js
+        const normalized = normalizePrefs(base);
+
+        // Save locally
+        localStorage.setItem("userPreferences", JSON.stringify(normalized));
+
+        // Optional: persist to backend (safe to ignore failures)
+        try {
+          const res = await fetch('http://localhost:3000/api/save-preferences', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(normalized)
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(()=>({}));
+            console.warn('save-preferences failed:', data?.message || res.status);
+          }
+        } catch (err) {
+          console.warn("DB save failed, continuing locally:", err.message);
+        }
+
+        // Generate & save plan snapshot (if engine present)
+        try {
+          if (window.generateRecommendations && window.savePlanToLocal) {
+            const items = generateRecommendations(normalized);
+            savePlanToLocal(normalized, items);
+          }
+        } catch (err) {
+          console.warn('generateRecommendations error:', err);
+        }
+
+        closeQuestionnaireModal();
+        window.location.href = 'recommendations.html';
+      }
+    }
+  </script>
+</body>
+<script src="recs.js?v=21"></script>
+<script src="questionnaire.js"></script>
+</html>
+
+
+

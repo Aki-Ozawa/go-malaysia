@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Saved Plan | Go Malaysia</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    :root{
+      --bg:#faf7f3;
+      --card:#ffffff;
+      --ink:#0f172a;
+      --muted:#6b7280;
+      --line:#eef2f7;
+      --brand:#2563eb;
+      --chip:#f1f5ff;
+      --pill:#f8fafc;
+      --shadow:0 8px 24px rgba(0,0,0,.06);
+    }
+    body{ background:var(--bg); }
+    .wrap{ max-width:960px; margin:28px auto; padding:0 16px; }
+    .card{
+      background:var(--card); border:1px solid var(--line); border-radius:16px;
+      padding:20px; box-shadow:var(--shadow);
+    }
+    h3{ margin:0 0 4px; font-size:1.25rem; color:var(--ink); display:flex; gap:8px; align-items:center; }
+    .chip{
+      display:inline-flex; gap:6px; align-items:center;
+      background:var(--chip); color:#2743b8; border:1px solid #dfe7ff;
+      padding:4px 10px; border-radius:999px; font-size:.85rem; font-weight:600;
+    }
+    .meta{ color:var(--muted); font-size:.9rem; margin-left:8px; }
+    .kvs{
+      display:grid; grid-template-columns: 120px 1fr; gap:10px 16px;
+      margin:14px 0 6px;
+    }
+    .kvs b{ color:#374151; }
+    .pill{
+      display:inline-block; background:var(--pill); border:1px solid var(--line);
+      padding:4px 10px; border-radius:999px;
+    }
+    .section-title{ margin:14px 0 8px; font-weight:700; color:#0f172a; }
+    .list{ list-style:none; padding:0; margin:0; display:grid; gap:10px; }
+    .item{
+      border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:#fff; display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;
+    }
+    .num{
+      width:28px; height:28px; border-radius:999px; display:grid; place-items:center;
+      background:#eef2ff; color:#2743b8; font-weight:800; font-size:.9rem; border:1px solid #dfe7ff;
+      flex:0 0 28px;
+    }
+    .item h4{ margin:0; font-size:1rem; color:#111827; }
+    .item .sub{ color:var(--muted); font-size:.9rem; }
+    .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .spacer{ flex:1; }
+    .toolbar{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+    .btn{
+      border:1px solid var(--line); background:#fff; padding:8px 12px; border-radius:10px; cursor:pointer;
+    }
+    .btn.primary{ background:var(--brand); color:#fff; border-color:transparent; }
+    .banner{border-radius:10px;padding:10px 12px;margin:12px 0;display:flex;gap:10px;align-items:flex-start}
+    .banner.info{background:#e0f2fe;color:#0c4a6e;border:1px solid #bae6fd}
+    .banner.tip{background:#ecfeff;color:#134e4a;border:1px solid #a5f3fc}
+    .badge{display:inline-block;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;padding:2px 6px;border-radius:999px;font-size:.8rem;margin-right:6px}
+    .score-wrap{width:100%;height:6px;background:#eee;border-radius:4px;margin-top:4px;overflow:hidden}
+    .score-bar{height:100%;border-radius:4px;transition:width .6s ease}
+    .score-badge{background:#eee;padding:2px 6px;border-radius:6px;font-size:0.85rem;font-weight:700;margin-left:6px}
+    /* --- Always-visible action buttons (per your previous tweak) --- */
+    .btn, .btn.icon, .row .btn, .item .btn { opacity:1 !important; visibility:visible !important; pointer-events:auto !important; color:#111 !important; }
+    .actions { opacity:1 !important; visibility:visible !important; pointer-events:auto !important; }
+    .btn { transition: background .15s ease, transform .05s ease; }
+    .btn:hover { background:#f3f4f6; }
+    .btn.icon { min-width:36px; text-align:center; font-size:16px; line-height:1; }
+  </style>
+</head>
+<body>
+  <div id="navbar-placeholder"></div>
+
+  <main>
+    <div class="wrap">
+      <section class="card">
+        <div class="topbar row">
+          <h3>📌 Your Saved Plan</h3>
+          <span id="savedChip" class="chip" style="display:none;">Saved <span id="savedWhen"></span></span>
+          <span id="savedCount" class="meta"></span>
+          <div class="spacer"></div>
+          <button id="btnRerun" class="btn primary">Re-run with these prefs →</button>
+        </div>
+
+        <!-- context banner -->
+        <div id="contextBanner"></div>
+
+        <div id="prefsBlock"></div>
+
+        <div class="section-title">Items</div>
+        <ul id="planList" class="list"></ul>
+
+        <div class="toolbar">
+          <a href="itinerary.html"><button class="btn">← Back to Itinerary</button></a>
+          <button id="btnExport" class="btn">⬇️ Export JSON</button>
+          <button id="btnClear" class="btn">🧹 Clear Saved Plan</button>
+        </div>
+
+        <p id="emptyMsg" class="empty" style="display:none;">
+          No saved plan yet. From the recommendations page, click <em>“Save This Plan”</em>.
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <div id="footer-placeholder"></div>
+
+  <script>
+    // navbar/footer
+    Promise.all([
+      fetch('navbar.html').then(r=>r.text()).then(h=>document.getElementById('navbar-placeholder').innerHTML=h),
+      fetch('footer.html').then(r=>r.text()).then(h=>document.getElementById('footer-placeholder').innerHTML=h)
+    ]).catch(()=>{});
+  </script>
+
+  <script>
+  (function(){
+    const savedChip = document.getElementById('savedChip');
+    const savedWhen = document.getElementById('savedWhen');
+    const savedCount= document.getElementById('savedCount');
+    const prefsBlock= document.getElementById('prefsBlock');
+    const planList  = document.getElementById('planList');
+    const emptyMsg  = document.getElementById('emptyMsg');
+    const btnRerun  = document.getElementById('btnRerun');
+    const banner    = document.getElementById('contextBanner');
+
+    const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const colorForScore = s => s>=85 ? '#22c55e' : s>=70 ? '#84cc16' : s>=50 ? '#f59e0b' : '#ef4444';
+    const parseHM = s => { const [h,m] = s.split(':').map(Number); return h*60+m; };
+    const isEvening = dt => (dt.getHours()*60 + dt.getMinutes()) >= parseHM('16:30');
+
+    function getSaved(){
+      try { const raw = localStorage.getItem('savedPlan'); return raw ? JSON.parse(raw) : null; }
+      catch { return null; }
+    }
+
+    const prefPill = label => `<span class="pill">${esc(label || '-')}</span>`;
+    const badge = (on, label) => `<span class="badge">${on ? '✓' : '–'} ${label}</span>`;
+
+    function renderBanner(p){
+      if (!p) { banner.innerHTML=''; return; }
+      const bits = [];
+      let eveningNote = '';
+
+      if (p.localTimeISO) {
+        const dt = new Date(p.localTimeISO);
+        if (!isNaN(dt) && String(p.recommendationType||'').toLowerCase()==='activities' && isEvening(dt)){
+          eveningNote = '🌙 Evening detected: Night Markets are eligible under <strong>Activities</strong>.';
+        }
+      }
+
+      bits.push(`
+        <div class="banner info">
+          <div>🧭 Context</div>
+          <div style="flex:1">
+            ${eveningNote || 'Using the preferences saved with this plan.'}
+            <div style="margin-top:6px;">
+              ${badge(!!p.localTimeISO, 'Prefer open now')}
+              ${badge(!(p.allowFarTravel===true), 'Lock to chosen region')}
+              ${badge(p.strictWeather!==false, 'Strict weather')}
+              ${badge(p.strictPreference===true, 'Strict indoor/outdoor')}
+            </div>
+          </div>
+        </div>
+      `);
+
+      if (!p.localTimeISO){
+        bits.push(`
+          <div class="banner tip">
+            💡 Tip: Enable <em>Prefer open now</em> in the questionnaire to boost currently-open venues.
+          </div>
+        `);
+      }
+
+      banner.innerHTML = bits.join('');
+    }
+
+    function render(){
+      const sp = getSaved();
+
+      if (!sp || !Array.isArray(sp.items) || sp.items.length === 0){
+        savedChip.style.display = 'none';
+        savedWhen.textContent = '';
+        savedCount.textContent = '';
+        prefsBlock.innerHTML = '';
+        planList.innerHTML = '';
+        banner.innerHTML = '';
+        emptyMsg.style.display = 'block';
+        return;
+      }
+      emptyMsg.style.display = 'none';
+
+      const when = sp.savedAt ? new Date(sp.savedAt).toLocaleString() : '';
+      savedWhen.textContent = when;
+      savedChip.style.display = when ? 'inline-flex' : 'none';
+      savedCount.textContent = `• ${sp.items.length} item${sp.items.length>1?'s':''}`;
+
+      const p = sp.preferences || {};
+      renderBanner(p);
+
+      // prefs summary
+      prefsBlock.innerHTML = `
+        <div class="kvs">
+          <b>Category</b>   <div>${prefPill(p.recommendationType || p.category)}</div>
+          <b>Region</b>     <div>${prefPill(p.region || 'Any')}</div>
+          <b>Month</b>      <div>${prefPill(p.month || '-')}</div>
+          <b>Preference</b> <div>${prefPill(p.preference || '-')}</div>
+          <b>Weather</b>    <div>${prefPill(p.weather || '-')}</div>
+          <b>Budget</b>     <div>${prefPill(p.budget || '-')}</div>
+        </div>
+        <div class="divider"></div>
+      `;
+
+      // items
+      planList.innerHTML = '';
+      sp.items.forEach((it, i) => {
+        const name = esc(it.name || 'Unnamed');
+        const desc = it.description ? `<div class="sub" style="margin-top:2px">${esc(it.description)}</div>` : '';
+        const meta = [it.location && `<strong>Location:</strong> ${esc(it.location)}`, it.cost && `<strong>Cost:</strong> ${esc(it.cost)}`].filter(Boolean).join(' · ');
+        const score = Math.round(Number(it.score)||0);
+        const li = document.createElement('li');
+        li.className = 'item';
+        li.innerHTML = `
+          <div class="num">${i+1}</div>
+          <div style="flex:1 1 420px; min-width:260px;">
+            <h4>${name} ${score?`<span class="score-badge">${score}/100</span>`:''}</h4>
+            ${desc}
+            ${meta ? `<div class="sub" style="margin-top:4px">${meta}</div>` : ``}
+            ${score ? `
+              <div class="score-wrap"><div class="score-bar" style="width:${score}%;background:${colorForScore(score)};"></div></div>
+            ` : '' }
+          </div>
+        `;
+        planList.appendChild(li);
+      });
+
+      // re-run button uses saved prefs
+      btnRerun.onclick = () => {
+        try {
+          localStorage.setItem('userPreferences', JSON.stringify(p || {}));
+        } catch {}
+        window.location.href = 'recommendations.html';
+      };
+    }
+
+    document.getElementById('btnClear').onclick = function(){
+      if (!confirm('Clear the saved plan snapshot?')) return;
+      localStorage.removeItem('savedPlan');
+      render();
+    };
+    document.getElementById('btnExport').onclick = function(){
+      const sp = getSaved();
+      if (!sp) { alert('No saved plan.'); return; }
+      const blob = new Blob([JSON.stringify(sp, null, 2)], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'saved-plan.json'; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    render();
+  })();
+  </script>
+</body>
+</html>

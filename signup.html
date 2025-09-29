@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sign Up - Go Malaysia</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body data-page="signup">
+  <div id="navbar-placeholder"></div>
+
+  <main>
+    <div class="container">
+      <h2>Sign Up</h2>
+      <form id="signupForm" class="signup-form">
+        <input type="text" id="name" placeholder="Full Name" required>
+        <input type="email" id="email" placeholder="Email" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <input type="password" id="confirmPassword" placeholder="Confirm Password" required>
+        <button type="submit">Sign Up</button>
+      </form>
+      <p>Already have an account? <a href="login.html">Log in here</a>.</p>
+    </div>
+  </main>
+
+  <div id="footer-placeholder"></div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Load navbar and footer
+      fetch("navbar.html")
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById("navbar-placeholder").innerHTML = data;
+        });
+
+      fetch("footer.html")
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById("footer-placeholder").innerHTML = data;
+        });
+
+      // Handle signup form submission
+      const signupForm = document.getElementById("signupForm");
+
+      signupForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+
+        const name = document.getElementById("name").value.trim();
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value.trim();
+        const confirmPassword = document.getElementById("confirmPassword").value.trim();
+
+        if (password !== confirmPassword) {
+          alert("Passwords do not match!");
+          return;
+        }
+
+        fetch("http://localhost:3000/api/signup", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name, email, password }),
+        })
+          .then(async (res) => {
+            const data = await res.json();
+            alert(data.message);
+            if (res.ok) {
+              window.location.href = "login.html";
+            }
+          })
+          .catch((error) => {
+            console.error("❌ Error:", error);
+            alert("An error occurred during signup.");
+          });
+      });
+    });
+  </script>
+</body>
+</html>

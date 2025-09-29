@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Go Malaysia</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body data-page="index">
+  <!-- Navbar Placeholder -->
+  <div id="navbar-placeholder"></div>
+
+  <main>
+    <div class="container">
+      <h2>Welcome to Go Malaysia</h2>
+      <p>Discover and explore the best places, food, and activities tailored to your preferences.</p>
+      <div class="home-content">
+        <img src="welcome.png" alt="Welcome to Malaysia" class="illustration">
+        <button id="getStartedBtn">Get Started</button>
+      </div>    
+    </div>
+  </main>
+
+  <!-- Footer Placeholder -->
+  <div id="footer-placeholder"></div>
+
+  <!-- Load Navbar and Footer -->
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      fetch("navbar.html")
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById("navbar-placeholder").innerHTML = data;
+        });
+
+      fetch("footer.html")
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById("footer-placeholder").innerHTML = data;
+        });
+
+      // Get Started button logic
+      const getStartedBtn = document.getElementById("getStartedBtn");
+      if (getStartedBtn) {
+        getStartedBtn.addEventListener("click", function () {
+          const isLoggedIn = localStorage.getItem("loggedIn") === "true";
+          if (isLoggedIn) {
+            window.location.href = "questionnaire.html";
+          } else {
+            window.location.href = "signup.html";
+          }
+        });
+      }
+    });
+  </script>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

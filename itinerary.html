@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Itinerary | Go Malaysia</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .iti-container { max-width: 960px; margin: 20px auto; padding: 0 12px; }
+    .row { display:flex; align-items:center; gap:10px; margin:10px 0; }
+    .spacer { flex:1; }
+    .btn {
+      padding:6px 12px;
+      border-radius:8px;
+      border:1px solid #d1d5db;
+      background:#fff;
+      color:#111;              /* ensure text is visible */
+      cursor:pointer;
+      opacity:1;               /* never faded */
+      transition: background .15s ease, transform .05s ease;
+    }
+    .btn:hover { background:#f3f4f6; }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
+    .btn.icon { min-width:36px; text-align:center; font-size:16px; line-height:1; }
+    .muted { color:#6b7280; }
+    ul.itinerary-list { list-style:none; padding-left:0; margin:0; }
+    ul.itinerary-list li { border-bottom:1px solid #eee; padding:8px 0; }
+    .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .subtitle { margin:4px 0 14px; color:#6b7280; }
+  </style>
+  <script src="./storage.js"></script>
+  <script src="recs.js?v=21"></script>
+
+</head>
+<body>
+  <div id="navbar-placeholder"></div>
+
+  <main>
+    <div class="iti-container">
+      <h2 id="gmItiTitle">Your Itinerary</h2>
+      <div id="gmItiSub" class="subtitle"></div>
+
+      <div class="toolbar">
+        <button class="btn primary" id="gmBtnSaveToSavedPlan" type="button">Save to Saved Plan</button>
+        <button class="btn" id="gmBtnRename" type="button">Rename</button>
+        <button class="btn" id="gmBtnClear" type="button">Clear itinerary</button>
+        <button class="btn" id="gmBtnBack" type="button">Back to Results</button>
+      </div>
+
+      <ul id="gmItiList" class="itinerary-list"></ul>
+
+      <p id="gmEmptyMsg" class="muted" style="display:none;margin-top:12px;">
+        No items yet. Go to <a href="recommendations.html">Recommendations</a>, select some, and click “Save to Itinerary…”.
+      </p>
+    </div>
+  </main>
+
+  <div id="footer-placeholder"></div>
+
+  <script>
+    // load navbar/footer
+    Promise.all([
+      fetch('navbar.html').then(r=>r.text()).then(h=>document.getElementById('navbar-placeholder').innerHTML=h),
+      fetch('footer.html').then(r=>r.text()).then(h=>document.getElementById('footer-placeholder').innerHTML=h)
+    ]).catch(()=>{});
+  </script>
+
+  <script>
+  (function(){
+    const titleEl = document.getElementById('gmItiTitle');
+    const subEl   = document.getElementById('gmItiSub');
+    const listEl  = document.getElementById('gmItiList');
+    const emptyEl = document.getElementById('gmEmptyMsg');
+
+    function render() {
+      const iti = GM.getItinerary();
+      titleEl.textContent = iti.name || 'Your Itinerary';
+
+      listEl.innerHTML = '';
+      const items = (iti.items || []).slice().sort((a,b)=>a.position-b.position);
+      subEl.textContent = items.length ? `${items.length} item${items.length>1?'s':''}` : '';
+
+      if (items.length === 0) {
+        emptyEl.style.display = 'block';
+        return;
+      }
+      emptyEl.style.display = 'none';
+
+      items.forEach(item=>{
+        const li = document.createElement('li');
+        li.className = 'row';
+        li.innerHTML =
+          '<strong style="width:2ch;text-align:right;">'+(item.position||'')+'.</strong>' +
+          '<span>'+ (item.name || 'Unnamed') +'</span>' +
+          (item.category ? '<span class="muted"> · '+item.category+'</span>' : '') +
+          (item.area ? '<span class="muted"> · '+item.area+'</span>' : '') +
+          '<span class="spacer"></span>' +
+          '<button type="button" class="btn icon" data-act="up" aria-label="Move up" data-id="'+item.id+'">↑</button>' +
+          '<button type="button" class="btn icon" data-act="down" aria-label="Move down" data-id="'+item.id+'">↓</button>' +
+          '<button type="button" class="btn" data-act="del" aria-label="Remove" data-id="'+item.id+'">Remove</button>';
+        listEl.appendChild(li);
+      });
+
+      // wire buttons (always visible)
+      listEl.querySelectorAll('button').forEach(btn=>{
+        btn.onclick = () => {
+          const act = btn.dataset.act;
+          const id  = String(btn.dataset.id);
+          GM.updateItinerary(iti=>{
+            const arr = (iti.items || []).slice().sort((a,b)=>a.position-b.position);
+            const pos = arr.findIndex(x => String(x.id) === id);
+            if (pos < 0) return iti;
+
+            if (act==='up'   && pos>0)            { [arr[pos-1], arr[pos]] = [arr[pos], arr[pos-1]]; }
+            if (act==='down' && pos<arr.length-1) { [arr[pos+1], arr[pos]] = [arr[pos], arr[pos+1]]; }
+            if (act==='del')                      { arr.splice(pos,1); }
+
+            arr.forEach((x,i)=> x.position = i+1);
+            return { ...iti, items: arr, updatedAt: new Date().toISOString() };
+          });
+          render();
+        };
+      });
+    }
+
+    // Rename
+    document.getElementById('gmBtnRename').onclick = () => {
+      const iti = GM.getItinerary();
+      const name = prompt('New itinerary name:', iti.name || 'My Itinerary');
+      if (!name) return;
+      GM.saveItinerary(iti.items || [], name);
+      render();
+    };
+
+    // Clear
+    document.getElementById('gmBtnClear').onclick = () => {
+      if (!confirm('Clear all items from this itinerary?')) return;
+      GM.saveItinerary([], 'My Itinerary');
+      render();
+    };
+
+    // Back
+    document.getElementById('gmBtnBack').onclick = () => {
+      window.location.href = 'recommendations.html';
+    };
+
+    // Save to Saved Plan (for snapshot/export page)
+    document.getElementById('gmBtnSaveToSavedPlan').onclick = () => {
+      const iti = GM.getItinerary();
+      if (!iti.items || iti.items.length === 0) {
+        alert('No items in the itinerary.');
+        return;
+      }
+      let prefs = {};
+      try { prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}'); } catch {}
+      const snapshot = {
+        preferences: prefs,
+        items: iti.items.map(x => ({ ...x })),
+        savedAt: new Date().toISOString()
+      };
+      localStorage.setItem('savedPlan', JSON.stringify(snapshot));
+      alert('✅ Saved this itinerary as a Saved Plan snapshot.');
+      window.location.href = 'savedplan.html';
+    };
+
+    // init
+    render();
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Recommendations | Go Malaysia</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Load the engine first -->
+  <script src="recs.js?v=21"></script>
+  <!-- Front-end storage helpers (GM.KEYS, GM.load/save, GM.createItinerary) -->
+  <script src="./storage.js"></script>
+
+  <style id="score-styles">
+    .score-wrap{width:100%;height:6px;background:#eee;border-radius:4px;margin-top:4px;overflow:hidden}
+    .score-bar{height:100%;border-radius:4px;transition:width .6s ease}
+    .score-badge{background:#eee;padding:2px 6px;border-radius:6px;font-size:0.85rem;font-weight:700;margin-left:6px}
+    .list{list-style:none;padding-left:0}
+    .recommendation-item{padding:12px 0}
+    .select-line{display:inline-flex;gap:8px;align-items:center;margin-top:8px}
+    .banner{border-radius:10px;padding:10px 12px;margin:12px 0;display:flex;gap:10px;align-items:flex-start}
+    .banner.info{background:#e0f2fe;color:#0c4a6e;border:1px solid #bae6fd}
+    .banner.tip{background:#ecfeff;color:#134e4a;border:1px solid #a5f3fc}
+    .badge{display:inline-block;background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0;padding:2px 6px;border-radius:999px;font-size:.8rem;margin-right:6px}
+  </style>
+</head>
+<body data-page="recommendations">
+  <!-- Navbar -->
+  <div id="navbar-placeholder"></div>
+
+  <main>
+    <div class="container">
+      <h2>Your Recommendations</h2>
+
+      <!-- dynamic context banner -->
+      <div id="contextBanner"></div>
+
+      <div id="recCard" class="recommendation-item"></div>
+    </div>
+
+    <!-- Sticky selection bar (for building an itinerary from selected items) -->
+    <div id="gmSelectBar" style="position:sticky;bottom:0;left:0;right:0;margin:12px auto;max-width:960px;padding:10px 12px;border-radius:10px;background:#2563eb;color:#fff;display:flex;gap:12px;align-items:center;justify-content:space-between;">
+      <span id="gmSelectCount">Selected: 0</span>
+      <div style="display:flex;gap:8px;">
+        <button id="gmBtnClearSel" type="button">Clear</button>
+        <button id="gmBtnSavePlan" type="button">Save to Itinerary…</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <div id="footer-placeholder"></div>
+
+  <!-- Page script -->
+  <script>
+    /*** Utilities ***/
+    const colorForScore = s => s>=85 ? '#22c55e' : s>=70 ? '#84cc16' : s>=50 ? '#f59e0b' : '#ef4444';
+    const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const safeParse = (s, fb) => { try { return JSON.parse(s) } catch { return fb } };
+    // NOTE: removed duplicate parseHM/isEvening — they live in recs.js
+
+    function safePrefs() {
+      // Prefer questionnaire; fallback to saved plan format if present
+      const fromForm = safeParse(localStorage.getItem('userPreferences') || '{}', {});
+      if (fromForm && Object.keys(fromForm).length) return fromForm;
+
+      const sp = safeParse(localStorage.getItem('savedPlan') || '{}', {});
+      if (sp && sp.preferences) return sp.preferences;
+
+      return {};
+    }
+
+    function showEngineMissing(card, prefs) {
+      card.innerHTML = `
+        <div class="recommendation-item">
+          <p>⚠️ The recommendation engine (<code>recs.js</code>) didn’t load or errored.</p>
+          <p>Make sure it sets <code>window.generateRecommendations</code> and <code>window.__RECS_OK__ = true</code>.</p>
+          <details style="margin-top:8px;">
+            <summary>▶ Debug: preferences used</summary>
+            <pre style="white-space:pre-wrap;background:#f6f7f9;padding:8px;border-radius:6px">${esc(JSON.stringify(prefs,null,2))}</pre>
+          </details>
+        </div>`;
+    }
+
+    /*** Selection state (restored across navigations) ***/
+    const selectedMap = new Map((GM.load(GM.KEYS.SELECTED, []) || []).map(x => [String(x.id), x]));
+
+    function syncSelectionUI() {
+      // reflect checkbox checked state
+      document.querySelectorAll('.gm-select-item').forEach(cb => {
+        cb.checked = selectedMap.has(String(cb.dataset.itemId));
+      });
+      // update counter + persist
+      const c = document.getElementById('gmSelectCount');
+      if (c) c.textContent = 'Selected: ' + selectedMap.size;
+      GM.save(GM.KEYS.SELECTED, Array.from(selectedMap.values()));
+    }
+
+    function attachSelectHandlers() {
+      document.querySelectorAll('.gm-select-item').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const item = {
+            id: cb.dataset.itemId || ('item_' + Date.now()),
+            name: cb.dataset.name || 'Unnamed',
+            category: cb.dataset.category || 'Unknown',
+            area: cb.dataset.area || 'Kuala Lumpur',
+            priceBand: cb.dataset.price || 'mid'
+          };
+          if (cb.checked) selectedMap.set(String(item.id), item);
+          else selectedMap.delete(String(item.id));
+          syncSelectionUI();
+        });
+      });
+      syncSelectionUI();
+    }
+
+    /*** Card renderer with checkbox ***/
+    function renderItem(item){
+      if (!item || typeof item !== 'object') return '';
+      const score = Math.round(Number(item.score) || 0);
+      const id    = String(item.id || item.name || ('i_' + Math.random().toString(36).slice(2)));
+      const name  = String(item.name || '');
+      const desc  = item.description ? String(item.description) : '';
+      const loc   = item.location ? String(item.location) : '';
+      const cost  = item.cost ? String(item.cost) : '';
+      const category = String(item.category || 'Unknown');
+      const area  = String(item.area || 'Klang Valley');          // safe default
+      const price = String(item.priceBand || item.costBand || 'mid');
+
+      return `
+        <li class="rec-li" style="margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <strong class="rec-title">${esc(name)}</strong>
+            <span class="score-badge">${score}/100</span>
+          </div>
+          <div class="score-wrap">
+            <div class="score-bar" style="width:${score}%;background:${colorForScore(score)};"></div>
+          </div>
+          ${desc ? `<div class="rec-desc" style="margin-top:4px;">${esc(desc)}</div>` : ""}
+          <div style="margin-top:6px;color:#444;">
+            ${[loc && `<strong>Location:</strong> ${esc(loc)}`, cost && `<strong>Cost:</strong> ${esc(cost)}`].filter(Boolean).join(' · ')}
+          </div>
+
+          <label class="select-line">
+            <input type="checkbox" class="gm-select-item"
+              data-item-id="${esc(id)}"
+              data-name="${esc(name)}"
+              data-category="${esc(category)}"
+              data-area="${esc(area)}"
+              data-price="${esc(price)}">
+            Add to plan
+          </label>
+        </li>
+      `;
+    }
+
+    function renderBanner(prefs){
+      const banner = document.getElementById('contextBanner');
+      if (!banner) return;
+
+      const bits = [];
+      const showBool = (on, label) => `<span class="badge">${on ? '✓' : '–'} ${label}</span>`;
+
+      let eveningNote = '';
+      if (prefs.localTimeISO) {
+        const dt = new Date(prefs.localTimeISO);
+        if (!isNaN(dt)) {
+          // use isEvening from recs.js
+          if (typeof window.isEvening === 'function' && window.isEvening(dt)) {
+            if (String(prefs.recommendationType||'').toLowerCase() === 'activities') {
+              eveningNote = '🌙 Evening detected: Night Markets are eligible under <strong>Activities</strong>.';
+            }
+          }
+        }
+      }
+
+      bits.push(`
+        <div class="banner info">
+          <div>🧭 Context</div>
+          <div style="flex:1">
+            ${eveningNote || 'Using your latest preferences.'}
+            <div style="margin-top:6px;">
+              ${showBool(!!prefs.localTimeISO, 'Prefer open now')}
+              ${showBool(!(prefs.allowFarTravel===true), 'Lock to chosen region')}
+              ${showBool(prefs.strictWeather!==false, 'Strict weather')}
+              ${showBool(prefs.strictPreference===true, 'Strict indoor/outdoor')}
+            </div>
+          </div>
+        </div>
+      `);
+
+      if (!prefs.localTimeISO) {
+        bits.push(`
+          <div class="banner tip">
+            💡 Tip: Turn on <em>Prefer open now</em> in the questionnaire to boost places that are currently open.
+          </div>
+        `);
+      }
+
+      banner.innerHTML = bits.join('');
+    }
+
+    async function init(){
+      // Load navbar/footer
+      await Promise.all([
+        fetch("navbar.html").then(r => r.text()).then(h => document.getElementById("navbar-placeholder").innerHTML = h),
+        fetch("footer.html").then(r => r.text()).then(h => document.getElementById("footer-placeholder").innerHTML = h)
+      ]);
+
+      const card  = document.getElementById("recCard");
+      const prefs = safePrefs();
+
+      // Engine health
+      if (!window.__RECS_OK__ || typeof window.generateRecommendations !== 'function') {
+        showEngineMissing(card, prefs);
+        console.warn('recs.js not ready. typeof generateRecommendations =', typeof window.generateRecommendations);
+        return;
+      }
+
+      const catForEngine = (prefs && (prefs.recommendationType || prefs.category)) || '';
+      if (!catForEngine) {
+        card.innerHTML = `<p>No preferences found. Please fill the questionnaire first.</p>
+        <details style="margin-top:8px;"><summary>Debug</summary>
+        <pre style="white-space:pre-wrap;background:#f6f7f9;padding:8px;border-radius:6px">${esc(JSON.stringify(prefs,null,2))}</pre>
+        </details>`;
+        return;
+      }
+
+      // Normalize what the engine expects
+      prefs.recommendationType = prefs.recommendationType || prefs.category;
+
+      // If a region was chosen, default to strict region unless user opted in
+      if (prefs.region && (prefs.allowFarTravel === undefined || prefs.allowFarTravel === null)) {
+        prefs.allowFarTravel = false;
+      }
+
+      renderBanner(prefs);
+
+      // Generate + render
+      const items = generateRecommendations(prefs) || [];
+      const itemsHtml = items.length
+        ? `<ul class="list" style="margin-top:10px;">${items.map(renderItem).join('')}</ul>`
+        : `<p style="margin-top:10px;">No strong matches. Try relaxing weather or indoor/outdoor strictness, enable “Prefer open now”, or pick a different category.</p>`;
+
+      card.innerHTML = `
+        <p style="margin-bottom:6px;">
+          <strong>Category:</strong> ${esc(prefs.recommendationType || prefs.category || '-')}
+          ${prefs.region ? ` · <strong>Region:</strong> ${esc(prefs.region)}` : ''}
+          ${prefs.weather ? ` · <strong>Weather:</strong> ${esc(prefs.weather)}` : ''}
+          ${prefs.month ? ` · <strong>Month:</strong> ${esc(prefs.month)}` : ''}
+          ${prefs.preference ? ` · <strong>Preference:</strong> ${esc(prefs.preference)}` : ''}
+        </p>
+        ${itemsHtml}
+        <div style="margin-top:16px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+          <button id="savePlanBtn" class="primary-btn">💾 Save This Plan</button>
+          <a href="questionnaire.html"><button class="secondary-btn">🔙 Back to Questionnaire</button></a>
+        </div>
+      `;
+
+      // Hook up the "Save This Plan"
+      const saveSnapshotBtn = document.getElementById("savePlanBtn");
+      if (saveSnapshotBtn) {
+        saveSnapshotBtn.addEventListener("click", () => {
+          const snapshot = {
+            preferences: prefs,
+            items,
+            savedAt: new Date().toISOString()
+          };
+          localStorage.setItem('savedPlan', JSON.stringify(snapshot));
+          alert("✅ Saved plan snapshot created.");
+          window.location.href = "savedplan.html";
+        });
+      }
+
+      // Activate selection handlers now that items exist
+      attachSelectHandlers();
+
+      // Sticky bar buttons
+      const clearBtn = document.getElementById('gmBtnClearSel');
+      if (clearBtn) clearBtn.onclick = () => {
+        selectedMap.clear();
+        syncSelectionUI();
+        document.querySelectorAll('.gm-select-item').forEach(cb => cb.checked = false);
+      };
+
+      const saveBtn = document.getElementById('gmBtnSavePlan');
+      if (saveBtn) saveBtn.onclick = () => {
+        if (selectedMap.size === 0) { alert('Select at least one item.'); return; }
+        const name = prompt('Itinerary name:', 'My Itinerary ' + new Date().toLocaleDateString());
+        if (!name) return;
+
+        const itemsForIti = Array.from(selectedMap.values()).map((x, i) => {
+          const copy = { ...x };
+          copy.position = i + 1;
+          return copy;
+        });
+
+        GM.saveItinerary(itemsForIti, name);
+        selectedMap.clear();
+        GM.save(GM.KEYS.SELECTED, []);
+        window.location.href = 'itinerary.html';
+      };
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
+
+  <!-- AI Assistant (drop-in UI) -->
+  <script>
+    (function(){
+      if (window.__ASSIST_MOUNTED__) return; window.__ASSIST_MOUNTED__ = true;
+
+      // Floating button
+      const fab = document.createElement('button');
+      fab.textContent = 'AI Assistant';
+      Object.assign(fab.style, {
+        position:'fixed', right:'20px', bottom:'20px', padding:'10px 16px',
+        borderRadius:'999px', background:'#111', color:'#fff', border:'none',
+        fontWeight:'700', zIndex:'99999', cursor:'pointer', boxShadow:'0 6px 18px rgba(0,0,0,.15)'
+      });
+      document.body.appendChild(fab);
+
+      // Panel
+      const panel = document.createElement('div');
+      Object.assign(panel.style, {
+        position:'fixed', right:'20px', bottom:'80px', width:'340px', maxHeight:'65vh',
+        background:'#fff', border:'1px solid #eee', borderRadius:'16px', display:'none',
+        flexDirection:'column', overflow:'hidden', zIndex:'99999', boxShadow:'0 12px 30px rgba(0,0,0,.18)'
+      });
+      panel.innerHTML = `
+        <div style="padding:10px 12px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; font-weight:700;">
+          Travel AI Assistant
+          <button id="assistClose" style="border:none;background:transparent;font-size:18px;cursor:pointer">×</button>
+        </div>
+        <div id="assistMsgs" style="padding:10px; overflow:auto; flex:1;"></div>
+        <div style="display:flex; gap:8px; padding:10px; border-top:1px solid #eee;">
+          <input id="assistInput" type="text" placeholder="Ask for KL food, Penang markets, rainy-day plans…" style="flex:1; padding:10px; border:1px solid #ddd; border-radius:10px" />
+          <button id="assistSend" style="padding:10px 14px; border:none; border-radius:10px; background:#111; color:#fff; cursor:pointer;">Send</button>
+        </div>
+      `;
+      document.body.appendChild(panel);
+
+      const msgs  = panel.querySelector('#assistMsgs');
+      const input = panel.querySelector('#assistInput');
+      const send  = panel.querySelector('#assistSend');
+      const close = panel.querySelector('#assistClose');
+
+      const add = (t, who='bot')=>{
+        const p = document.createElement('div');
+        p.style.margin = '6px 0';
+        p.textContent = (who==='me' ? 'You: ' : 'AI: ') + t;
+        msgs.appendChild(p);
+        msgs.scrollTop = msgs.scrollHeight;
+      };
+
+      const parsePrefs = (t)=>{
+        const s = t.toLowerCase();
+        const preference =
+          s.includes('indoor') ? 'indoor' :
+          s.includes('outdoor') ? 'outdoor' : 'flexible';
+        const weather =
+          s.includes('rain') ? 'rainy' :
+          s.includes('sun') ? 'sunny' :
+          s.includes('cloud') ? 'cloudy' : '';
+        const recommendationType =
+          s.includes('food') ? 'Food' :
+          s.includes('market') ? 'Shopping' :
+          (s.includes('hike')||s.includes('activity')) ? 'Activities' :
+          s.includes('nature') ? 'Nature' : '';
+        const region =
+          s.includes('penang') ? 'Penang' :
+          s.includes('melaka') ? 'Melaka' :
+          s.includes('putrajaya') ? 'Putrajaya' :
+          (s.includes('kl')||s.includes('kuala lumpur')) ? 'Klang Valley' : '';
+        const budget =
+          (s.includes('cheap')||s.includes('budget')) ? 'Budget' :
+          (s.includes('premium')||s.includes('expensive')) ? 'Premium' :
+          s.includes('mid') ? 'Mid-range' : '';
+        return { recommendationType, region, preference, weather, budget };
+      };
+
+      const reply = (text)=>{
+        try{
+          if (typeof window.generateRecommendations === 'function'){
+            const prefs = parsePrefs(text);
+            const items = window.generateRecommendations(prefs) || [];
+            if (items.length){
+              const top = items.slice(0,3).map(i => `• ${i.name} — ${i.description || ''} (${i.location || 'Malaysia'})`).join('\n');
+              add(`Here are some ideas:\n${top}`);
+              return;
+            }
+          }
+          add("Try: “Food in KL (indoor) for rainy day” / “Penang night market suggestions”.");
+        }catch(e){
+          console.error(e);
+          add("I hit a small error—try again!");
+        }
+      };
+
+      fab.addEventListener('click', ()=>{
+        const show = panel.style.display === 'none';
+        panel.style.display = show ? 'flex' : 'none';
+        if (show) setTimeout(()=>input.focus(),0);
+      });
+      close.addEventListener('click', ()=> panel.style.display='none');
+      send.addEventListener('click', ()=>{
+        const t = input.value.trim(); if(!t) return;
+        add(t,'me'); input.value=''; reply(t);
+      });
+      input.addEventListener('keydown', e=>{ if(e.key==='Enter') send.click(); });
+
+      setTimeout(()=> add("Hi  Ask me for KL food, Penang markets, hiking, or rainy-day indoor plans ✨"), 300);
+    })();
+  </script>
+</body>
+</html>
